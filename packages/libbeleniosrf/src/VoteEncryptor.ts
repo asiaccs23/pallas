@@ -12,7 +12,7 @@ import {
   UserVerificationKey,
 } from "./UserKeypair";
 
-const { ctx, g1, g1Inverse } = constants;
+const { ctx, g1, g1Inverse, n } = constants;
 
 export interface EncryptedVote {
   readonly c1: ECP;
@@ -55,6 +55,12 @@ export interface Sigma {
   readonly sigma5: ECP;
 }
 
+export interface Proofs {
+  readonly a0: ECP;
+  readonly b0: ECP;
+  readonly proof: BIG;
+}
+
 function range(count: number): readonly number[] {
   return Array.from({ length: count }).map((_, index) => index);
 }
@@ -76,6 +82,13 @@ export class VoteEncryptor {
     const { c1, c2, c3, r, T } = this.encrypt(m);
     const proofs = this.gsProve(r, T, m);
     return { c1, c2, c3, T, ...proofs };
+  }
+
+  public encryptFirst(m: Message): EncryptedVote & GSProofs & Proofs {
+    const { c1, c2, c3, r, T } = this.encrypt(m);
+    const proofs = this.gsProve(r, T, m);
+    const proof = this.provezero(c1, c2, r);
+    return { c1, c2, c3, T, ...proofs, ...proof };
   }
 
   /**
@@ -110,6 +123,29 @@ export class VoteEncryptor {
     const T = this.upk.X1.mul(r);
 
     return { c1, c2, c3, T, r };
+  }
+
+  private provezero(c1: ECP, c2: ECP, r: BIG): Proofs {
+    // have to do c2/u0
+    const s = this.rng.makeFactor();
+    const a0 = this.election.epk.g1.mul(s);
+    const b0 = this.election.epk.P.mul(s);
+    const arr_like = { a0, b0, c1, c2, length: 4 };
+    const hashbytes = ctx.MPIN.hashit(ctx.MPIN.SHA512, 4, arr_like);
+    const c = ctx.BIG.fromBytes(hashbytes);
+    c.mod(n);
+    const proof = s;
+    proof.add(ctx.BIG.modmul(c, r, n));
+    proof.mod(n); // s + (c*r mod p) mod p 
+    
+    const u0ch = this.election.epk.usig[0].mul(c);
+    const temp2 = c2.mul(c);
+    temp2.add(b0);
+    const temp3 = this.election.epk.P.mul(proof);
+    temp3.add(u0ch);
+    const v2 = temp3.equals(temp2);
+
+    return { a0, b0, proof };
   }
 
   private gsProve(r: BIG, T: ECP, m: Message): GSProofs {

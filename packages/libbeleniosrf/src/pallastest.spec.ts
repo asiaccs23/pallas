@@ -19,17 +19,14 @@ function fromHex(hex: string): Uint8Array {
   return new Uint8Array([...Buffer.from(hex, "hex")]);
 }
 
-// like https://gist.github.com/pyrros/4fddd7d49ae7c9c935f5d6a9a27d14c3
-describe("Belenios RF integrationtest", () => {
+describe("Pallas test", () => {
   // a very poor seed, don't copy into production code
   const defaultSeed = fromHex("aabbccddeeff00112233445566778899");
 
-  it("is a Weierstrass context", () => {
-    expect(ctx.ECP.CURVETYPE).toEqual(ctx.ECP.WEIERSTRASS);
-  });
-
-  it("can do the full flow described in the paper", () => {
     const rng = new Rng(ctx, defaultSeed);
+
+    var b0 : FirstBallot;
+    var b0Prime : Ballot;
 
     const k = 2;
     const electionKeypair = makeElectionKeypair(rng, k);
@@ -46,20 +43,29 @@ describe("Belenios RF integrationtest", () => {
     const m: Message = Array.from({ length: k }).map(
       () => Math.floor(Math.random() + 0.5) as 0 | 1,
     );
+  it("Time to generate first ballot", () => {
     const c0 = encryptor.encryptFirst(intToMessage(0, k));
     const sigma0 = encryptor.sign(c0);
+    b0 = { c0, sigma0 };
+  });
+    
+  it("Time to generate a randomization", () => {
+    b0Prime = randomizer.randomizefirst(userKeypair.vk, b0);
+  });
 
-    const b0: FirstBallot = { c0, sigma0 };
-    const b0Prime = randomizer.randomizefirst(userKeypair.vk, b0);
-
+  it("Time to verify first ballot", () => {
     expect(verifier.verifyFirstBallot(userKeypair.vk, b0)).toEqual(true);
+  });
+  it("Time to verify a ballot", () => {
     expect(verifier.verifyPlus(userKeypair.vk, b0Prime)).toEqual(true);
+  });
 
-    // const c = encryptor.encryptPlus(m);
-    // const sigma = encryptor.sign(c);
-
-    // const b: Ballot = { c, sigma };
-    const bSecond = randomizer.randomize(userKeypair.vk, b0Prime);
+  it("Time to generate a ballot", () => {
+     const c = encryptor.encryptPlus(m);
+     const sigma = encryptor.sign(c);
+     const b: Ballot = { c, sigma };
+   });
+ //const bSecond = randomizer.randomize(userKeypair.vk, b0Prime);
 
     // expect(verifier.verifyPlus(userKeypair.vk, bSecond)).toEqual(true);
     // expect(verifier.verifyPlus(userKeypair.vk, bPrime)).toEqual(true);
@@ -76,4 +82,3 @@ describe("Belenios RF integrationtest", () => {
     // const decryptedPB = trustee.decryptPlus(pb);
     // expect(decryptedPB).toEqual(m);
   });
-});

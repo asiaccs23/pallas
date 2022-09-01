@@ -1,7 +1,12 @@
 import { ECP, ECP2 } from "amcl-js";
 import { B2, ThetaOnly } from "groth-sahai";
 
-import { EncryptedVote, GSProofs, Sigma } from "./VoteEncryptor";
+import { EncryptedVote, GSProofs, Sigma, Proofs } from "./VoteEncryptor";
+
+export interface FirstBallot {
+  readonly c0: EncryptedVote & GSProofs & Proofs;
+  readonly sigma0: Sigma;
+}
 
 export interface Ballot {
   readonly c: EncryptedVote & GSProofs;

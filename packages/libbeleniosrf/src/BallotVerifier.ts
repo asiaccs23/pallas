@@ -1,13 +1,13 @@
 import { Pairings } from "ecc";
 
-import { Ballot } from "./Ballot";
+import { Ballot, FirstBallot } from "./Ballot";
 import { constants } from "./constants";
 import { ElectionPubkey } from "./ElectionKeypair";
 import { PublicElection } from "./PublicElection";
 import { serializeVerificationKey, UserVerificationKey } from "./UserKeypair";
-import { EncryptedVote, GSProofs } from "./VoteEncryptor";
+import { EncryptedVote, GSProofs, Proofs } from "./VoteEncryptor";
 
-const { ctx, g1, g2, g1Inverse } = constants;
+const { ctx, g1, g2, g1Inverse, n } = constants;
 
 export class BallotVerifier {
   private readonly pairings: Pairings;
@@ -18,6 +18,32 @@ export class BallotVerifier {
     this.pairings = new Pairings(ctx);
     this.election = election;
     this.epk = election.epk;
+  }
+
+  public verifyFirstBallot(vk: UserVerificationKey, b: FirstBallot): boolean {
+    const { P } = this.epk;
+    const { z } = vk.pp;
+    const { X2 } = vk;
+    const { c1, c2 } = b.c0;
+    const { sigma1, sigma2, sigma3, sigma4, sigma5 } = b.sigma0;
+
+    if (!this.verifyProofs(vk, b.c0)) return false;
+
+    if (!this.verifyzero(b.c0)) return false;
+
+    // test e(σ1, g2) = e(c1, σ4) from Verify+ (3a)
+    if (!this.pairings.e(sigma1, g2).equals(this.pairings.e(c1, sigma4))) return false;
+
+    // test e(σ2, g2) = e(z, X2) e(c2, σ4) from Verify+ (3b)
+    if (!this.pairings.e(sigma2, g2).equals(this.pairings.ee(z, X2, c2, sigma4))) return false;
+
+    // test e(σ3, g2) = e(g1, σ4) from Verify+ (3c)
+    if (!this.pairings.e(sigma3, g2).equals(this.pairings.e(g1, sigma4))) return false;
+
+    // test e(σ5, g2) = e(P, σ4) from Verify+ (3c)
+    if (!this.pairings.e(sigma5, g2).equals(this.pairings.e(P, sigma4))) return false;
+
+    return true;
   }
 
   public verifyPlus(vk: UserVerificationKey, b: Ballot): boolean {
@@ -83,5 +109,26 @@ export class BallotVerifier {
     }
 
     return true;
+  }
+  private verifyzero(c: EncryptedVote & Proofs): boolean {
+    // have to do c2/u0
+    const { c1, c2, a0, b0, proof } = c;
+    const arr_like = { a0, b0, c1, c2, length: 4 };
+    const hashbytes = ctx.MPIN.hashit(ctx.MPIN.SHA512, 4, arr_like);
+    const ch = ctx.BIG.fromBytes(hashbytes);
+    ch.mod(n);
+    const temp1 = c1.mul(ch); 
+    temp1.add(a0);
+    // g1*proof = a0 + c1*ch
+    const v1 = this.election.epk.g1.mul(proof).equals(temp1);
+    
+    const u0ch = this.election.epk.usig[0].mul(ch);
+    const temp2 = c2.mul(ch);
+    temp2.add(b0);
+    const temp3 = this.election.epk.P.mul(proof);
+    temp3.add(u0ch);
+    const v2 = temp3.equals(temp2);
+
+    return v1 && v2;
   }
 }
